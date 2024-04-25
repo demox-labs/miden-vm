@@ -79,7 +79,9 @@ impl Assembler {
     /// # Panics
     /// Panics if the assembler has already been used to compile programs.
     pub fn with_kernel(self, kernel_source: &str) -> Result<Self, AssemblyError> {
+        web_sys::console::log_1(&"with kernel 1".into());
         let kernel_ast = ModuleAst::parse(kernel_source)?;
+        web_sys::console::log_1(&"with kernel 2".into());
         self.with_kernel_module(kernel_ast)
     }
 
@@ -89,13 +91,19 @@ impl Assembler {
     /// Returns an error if compiling kernel source results in an error.
     pub fn with_kernel_module(mut self, module: ModuleAst) -> Result<Self, AssemblyError> {
         // compile the kernel; this adds all exported kernel procedures to the procedure cache
+        // console_error_panic_hook::set_once();
+        web_sys::console::log_1(&"with kernel module".into());
         let mut context = AssemblyContext::for_module(true);
+        web_sys::console::log_1(&"with kernel module 1".into());
         let kernel = Module::kernel(module);
+        web_sys::console::log_1(&"with kernel module 2".into());
         self.compile_module(&kernel.ast, Some(&kernel.path), &mut context)?;
+        web_sys::console::log_1(&"with kernel module 30".into());
 
         // convert the context into Kernel; this builds the kernel from hashes of procedures
         // exported form the kernel module
         self.kernel = context.into_kernel();
+        web_sys::console::log_1(&"with kernel module 4".into());
 
         Ok(self)
     }
@@ -206,27 +214,42 @@ impl Assembler {
         context: &mut AssemblyContext,
     ) -> Result<Vec<RpoDigest>, AssemblyError> {
         // a variable to track MAST roots of all procedures exported from this module
+        web_sys::console::log_1(&"compile 1".into());
         let mut proc_roots = Vec::new();
         context.begin_module(path.unwrap_or(&LibraryPath::anon_path()), module)?;
+        web_sys::console::log_1(&"compile 2".into());
 
         // process all re-exported procedures
         for reexporteed_proc in module.reexported_procs().iter() {
             // make sure the re-exported procedure is loaded into the procedure cache
             let ref_proc_id = reexporteed_proc.proc_id();
+            web_sys::console::log_1(&"compile 3".into());
             self.ensure_procedure_is_in_cache(&ref_proc_id, context).map_err(|_| {
+                web_sys::console::log_1(&"compile 3.1".into());
                 AssemblyError::ReExportedProcModuleNotFound(reexporteed_proc.clone())
             })?;
+            web_sys::console::log_1(&"compile 4".into());
 
             // if the library path is provided, build procedure ID for the alias and add it to the
             // procedure cache
             let proc_mast_root = if let Some(path) = path {
                 let proc_name = reexporteed_proc.name();
+                web_sys::console::log_1(&"compile 5".into());
                 let alias_proc_id = ProcedureId::from_name(proc_name, path);
+                web_sys::console::log_1(&"compile 6".into());
                 self.proc_cache
                     .try_borrow_mut()
                     .map_err(|_| AssemblyError::InvalidCacheLock)?
                     .insert_proc_alias(alias_proc_id, ref_proc_id)?
             } else {
+                web_sys::console::log_1(&"compile 7".into());
+                // log 
+                let thing = self.proc_cache
+                    .try_borrow_mut()
+                    .map_err(|_| AssemblyError::InvalidCacheLock)?
+                    .get_proc_root_by_id(&ref_proc_id);
+                web_sys::console::log_1(&format!("compile 7 {:?}", thing).into());
+
                 self.proc_cache
                     .try_borrow_mut()
                     .map_err(|_| AssemblyError::InvalidCacheLock)?
@@ -242,9 +265,11 @@ impl Assembler {
         // compile all local (internal end exported) procedures in the module; once the compilation
         // is complete, we get all compiled procedures (and their combined callset) from the
         // context
+        web_sys::console::log_1(&"compile 8".into());
         for proc_ast in module.procs().iter() {
             self.compile_procedure(proc_ast, context)?;
         }
+        web_sys::console::log_1(&"compile 9".into());
         let (module_procs, module_callset) = context.complete_module()?;
 
         // add the compiled procedures to the assembler's cache. the procedures are added to the
@@ -252,21 +277,36 @@ impl Assembler {
         // - a procedure is exported from the module, or
         // - a procedure is present in the combined callset - i.e., it is an internal procedure
         //   which has been invoked via a local call instruction.
+        web_sys::console::log_1(&"compile 10".into());
         for (proc_index, proc) in module_procs.into_iter().enumerate() {
+            web_sys::console::log_1(&"compile 101".into());
             if proc.is_export() {
+                web_sys::console::log_1(&"compile 102".into());
                 proc_roots.push(proc.mast_root());
             }
+            web_sys::console::log_1(&"compile 11".into());
 
             if proc.is_export() || module_callset.contains(&proc.mast_root()) {
                 // build the procedure ID if this module has the library path
                 let proc_id = build_procedure_id(path, &proc, proc_index);
+                web_sys::console::log_1(&"compile 111".into());
 
                 // this is safe because we fail if the cache is borrowed.
                 self.proc_cache
                     .try_borrow_mut()
                     .map_err(|_| AssemblyError::InvalidCacheLock)?
                     .insert(proc, proc_id)?;
+
+                web_sys::console::log_1(&"compile 112".into());
             }
+            web_sys::console::log_1(&"compile 12".into());
+        }
+        web_sys::console::log_1(&"compile 13".into());
+        // console log where the kernel on the context is empty
+        web_sys::console::log_1(&format!("compile 13 {:?}", context.kernel_is_some()).into());
+        // console log the proc roots
+        for proc_root in &proc_roots {
+            web_sys::console::log_1(&format!("{:?}", proc_root).into());
         }
 
         Ok(proc_roots)
@@ -394,20 +434,26 @@ impl Assembler {
         proc_id: &ProcedureId,
         context: &mut AssemblyContext,
     ) -> Result<(), AssemblyError> {
+        web_sys::console::log_1(&"ensure 0".into());
         if !self.proc_cache.borrow().contains_id(proc_id) {
             // if procedure is not in cache, try to get its module and compile it
             let module = self.module_provider.get_module(proc_id).ok_or_else(|| {
                 let proc_name = context.get_imported_procedure_name(proc_id);
                 AssemblyError::imported_proc_module_not_found(proc_id, proc_name)
             })?;
+            web_sys::console::log_1(&"ensure 1".into());
             self.compile_module(&module.ast, Some(&module.path), context)?;
+            web_sys::console::log_1(&"ensure 2".into());
             // if the procedure is still not in cache, then there was some error
+            // log if the proc_id is in the cache
+            web_sys::console::log_1(&format!("ensure {:?}", self.proc_cache.borrow().contains_id(proc_id)).into());
             if !self.proc_cache.borrow().contains_id(proc_id) {
                 return Err(AssemblyError::imported_proc_not_found_in_module(
                     proc_id,
                     &module.path,
                 ));
             }
+            web_sys::console::log_1(&"ensure 3".into());
         }
 
         Ok(())
@@ -459,7 +505,7 @@ fn combine_blocks(mut blocks: Vec<CodeBlock>) -> CodeBlock {
         }
     });
     if !contiguous_spans.is_empty() {
-        merged_blocks.push(combine_spans(&mut contiguous_spans));
+        merged_blocks.push(combine_spans(&mut contiguous_spans)); // not this
     }
 
     // build a binary tree of blocks joining them using JOIN blocks
@@ -471,7 +517,7 @@ fn combine_blocks(mut blocks: Vec<CodeBlock>) -> CodeBlock {
         core::mem::swap(&mut blocks, &mut grouped_blocks);
         let mut grouped_blocks = group_vector_elements::<CodeBlock, 2>(grouped_blocks);
         grouped_blocks.drain(0..).for_each(|pair| {
-            blocks.push(CodeBlock::new_join(pair));
+            blocks.push(CodeBlock::new_join(pair)); // not this
         });
 
         if let Some(block) = last_block {
@@ -517,13 +563,18 @@ fn build_procedure_id(
     proc: &NamedProcedure,
     proc_index: usize,
 ) -> Option<ProcedureId> {
+    web_sys::console::log_1(&"proc id 1".into());
     let mut proc_id = None;
     if let Some(path) = path {
+        // print the library path
+        web_sys::console::log_1(&path.path().into());
+        web_sys::console::log_1(&"proc id 2".into());
         if proc.is_export() {
             proc_id = Some(ProcedureId::from_name(proc.name(), path));
         } else {
             proc_id = Some(ProcedureId::from_index(proc_index as u16, path))
         }
     }
+    web_sys::console::log_1(&"proc id 3".into());
     proc_id
 }

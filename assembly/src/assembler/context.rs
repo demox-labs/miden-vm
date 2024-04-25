@@ -143,8 +143,14 @@ impl AssemblyContext {
     /// This pops the module off the module stack and return all local procedures of the module
     /// (both exported and internal) together with the combined callset of module's procedures.
     pub fn complete_module(&mut self) -> Result<(Vec<NamedProcedure>, CallSet), AssemblyError> {
+        web_sys::console::log_1(&"complete_module".into());
         let module_ctx = self.module_stack.pop().expect("no modules");
+        // console log is_kernel and if the module stack is empty
+        web_sys::console::log_1(&format!("is_kernel: {}, module_stack is empty: {}", self.is_kernel, self.module_stack.is_empty()).into());
+        // console log the length of the module stack
+        web_sys::console::log_1(&format!("module_stack length: {}", self.module_stack.len()).into());
         if self.is_kernel && self.module_stack.is_empty() {
+            web_sys::console::log_1(&"complete module is_kernel".into());
             // if we are compiling a kernel and this is the last module on the module stack, then
             // it must be the Kernel module; thus, we build a Kernel struct from the procedures
             // exported from the kernel module
@@ -155,6 +161,8 @@ impl AssemblyContext {
                 .map(|proc| proc.mast_root())
                 .collect::<Vec<_>>();
             self.kernel = Some(Kernel::new(&proc_roots).map_err(AssemblyError::KernelError)?);
+            // console log whether or not the kernel is empty
+            web_sys::console::log_1(&format!("kernel is empty: {}", self.kernel.as_ref().unwrap().is_empty()).into());
         }
 
         // return compiled procedures and callset from the module
@@ -178,6 +186,9 @@ impl AssemblyContext {
         is_export: bool,
         num_locals: u16,
     ) -> Result<(), AssemblyError> {
+        web_sys::console::log_1(&"begin_proc".into());
+        // log if the module stack is empty
+        web_sys::console::log_1(&format!("bp module stack is empty: {}", self.module_stack.is_empty()).into());
         self.module_stack
             .last_mut()
             .expect("no modules")
@@ -187,6 +198,10 @@ impl AssemblyContext {
     /// Completes compilation of the current procedure and adds the compiled procedure to the list
     /// of the current module's compiled procedures.
     pub fn complete_proc(&mut self, code: CodeBlock) {
+        // log the code block
+        web_sys::console::log_1(&format!("code block: {:?}", code).into());
+        // log if the module stack is empty
+        web_sys::console::log_1(&format!("module stack is empty: {}", self.module_stack.is_empty()).into());
         self.module_stack.last_mut().expect("no modules").complete_proc(code);
     }
 
@@ -214,6 +229,11 @@ impl AssemblyContext {
             let proc_name = &self.current_proc_context().expect("no procedure").name;
             return Err(AssemblyError::call_in_kernel(proc_name));
         }
+
+        // log the proc_idx and inlined
+        web_sys::console::log_1(&format!("proc_idx: {}, inlined: {}", proc_idx, inlined).into());
+        // log if the module stack is empty
+        web_sys::console::log_1(&format!("rlc module stack is empty: {}", self.module_stack.is_empty()).into());
 
         self.module_stack
             .last_mut()
@@ -278,7 +298,16 @@ impl AssemblyContext {
     /// Panics if this context was not used for kernel compilation (i.e., was not instantiated with
     /// is_kernel == true) or if the kernel module has not been completed yet.
     pub fn into_kernel(self) -> Kernel {
+        web_sys::console::log_1(&"into_kernel".into());
+        // self.kernel.unwrap_or_default()
+        // console log whether or not the kernel is empty
+        web_sys::console::log_1(&format!("kernel is empty: {}", self.kernel.as_ref().unwrap().is_empty()).into());
         self.kernel.expect("no kernel")
+    }
+
+    pub fn kernel_is_some(&self) -> bool {
+        let value = &self.kernel.is_some();
+        value.clone()
     }
 
     /// Transforms this context into a [CodeBlockTable] for the compiled program.

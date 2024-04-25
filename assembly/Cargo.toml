@@ -24,3 +24,6 @@ std = ["vm-core/std"]
 num_enum = "0.7"
 tracing = { version = "0.1", default-features = false, features = ["attributes"] }
 vm-core = { package = "miden-core", path = "../core", version = "0.9", default-features = false }
+web-sys = { version = "0.3", features = ["console"] }
+console_error_panic_hook = "0.1.7"
+dlmalloc = { version = "0.2.6" }
