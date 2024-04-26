@@ -1,3 +1,14 @@
+// use talc::*;
+
+// static mut ARENA: [u8; 536870911] = [0; 536870911];
+
+// #[global_allocator]
+// static ALLOCATOR: Talck<spin::Mutex<()>, ClaimOnOom> = Talc::new(unsafe {
+//     // if we're in a hosted environment, the Rust runtime may allocate before
+//     // main() is called, so we need to initialize the arena automatically
+//     ClaimOnOom::new(Span::from_const_array(core::ptr::addr_of!(ARENA)))
+// }).lock();
+
 use super::{
     ast::{instrument, Instruction, ModuleAst, Node, ProcedureAst, ProgramAst},
     crypto::hash::RpoDigest,
@@ -485,6 +496,54 @@ struct BodyWrapper {
 
 // HELPER FUNCTIONS
 // ================================================================================================
+fn combine_blocks_new(blocks: Vec<CodeBlock>) -> CodeBlock {
+    debug_assert!(!blocks.is_empty(), "cannot combine empty block list");
+
+    // In-place merging of spans
+    let mut merged_blocks = Vec::new();
+    let mut span_start = 0; 
+
+    for (i, block) in blocks.into_iter().enumerate() {
+        if block.is_span() {
+            // If we've accumulated spans, combine them before pushing
+            if span_start != i {  
+                let combined_span = combine_spans(&mut merged_blocks[span_start..i].to_vec());
+                merged_blocks.push(combined_span);
+                span_start = i + 1; // Reset span start
+            }
+        } else {
+            // Non-span: If we had spans, combine; then push the current block
+            if span_start != i {
+                let combined_span = combine_spans(&mut merged_blocks[span_start..i].to_vec());
+                merged_blocks.push(combined_span);
+            }
+            merged_blocks.push(block);
+            span_start = i + 1; // Reset span start
+        }
+    }
+
+    // Handle leftover spans
+    if span_start < merged_blocks.len() {
+        let combined_span = combine_spans(&mut merged_blocks[span_start..].to_vec());
+        merged_blocks.push(combined_span);
+    }
+
+    // Build the tree (using indices to avoid excessive copying)
+    let mut blocks = merged_blocks;
+    while blocks.len() > 1 {
+        let last_index = if blocks.len() % 2 == 0 { blocks.len() - 2 } else { blocks.len() - 1 };
+
+        for i in (0..blocks.len() / 2).rev() {
+            let pair = (2 * i, 2 * i + 1);
+            blocks[i] = CodeBlock::new_join((blocks[pair.0].clone(), blocks[pair.1].clone()).into());
+        }
+
+        blocks.truncate(blocks.len() / 2 + (blocks.len() % 2)); // Shrink, considering odd lengths
+    }
+
+    debug_assert!(!blocks.is_empty(), "no blocks");
+    blocks.remove(0)
+}
 
 fn combine_blocks(mut blocks: Vec<CodeBlock>) -> CodeBlock {
     debug_assert!(!blocks.is_empty(), "cannot combine empty block list");
@@ -505,7 +564,7 @@ fn combine_blocks(mut blocks: Vec<CodeBlock>) -> CodeBlock {
         }
     });
     if !contiguous_spans.is_empty() {
-        merged_blocks.push(combine_spans(&mut contiguous_spans)); // not this
+        merged_blocks.push(combine_spans(&mut contiguous_spans));
     }
 
     // build a binary tree of blocks joining them using JOIN blocks
@@ -526,6 +585,8 @@ fn combine_blocks(mut blocks: Vec<CodeBlock>) -> CodeBlock {
     }
 
     debug_assert!(!blocks.is_empty(), "no blocks");
+    // console log the length of blocks
+    web_sys::console::log_1(&format!("blocks length: {:?}", blocks.len()).into());
     blocks.remove(0)
 }
 
